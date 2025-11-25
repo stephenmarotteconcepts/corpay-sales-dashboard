@@ -1,0 +1,1107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sales Dashboard 2026</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>tailwind.config={theme:{extend:{fontFamily:{sans:['Inter','system-ui','sans-serif']}}}}</script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    * { font-family: 'Inter', system-ui, sans-serif; }
+    @keyframes pulse-glow { 0%, 100% { box-shadow: 0 0 5px #ef4444; } 50% { box-shadow: 0 0 20px #ef4444; } }
+    .listening { animation: pulse-glow 1s infinite; }
+    .optimal { background: linear-gradient(90deg, #dcfce7, #bbf7d0); }
+    .avoid { background: linear-gradient(90deg, #fee2e2, #fecaca); }
+    input::-webkit-inner-spin-button { opacity: 0; }
+    input:hover::-webkit-inner-spin-button { opacity: 1; }
+    .sync-pulse { animation: syncPulse 1s infinite; }
+    @keyframes syncPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+    .dark body { background: #0f172a; color: #e2e8f0; }
+    .dark .bg-white { background: #1e293b !important; }
+    .dark .bg-slate-50 { background: #0f172a !important; }
+    .dark .bg-gray-50, .dark .bg-gray-100 { background: #334155 !important; }
+    .dark .text-gray-900, .dark .text-gray-800, .dark .text-gray-700 { color: #e2e8f0 !important; }
+    .dark .text-gray-600, .dark .text-gray-500 { color: #94a3b8 !important; }
+    .dark .border { border-color: #475569 !important; }
+    .dark input, .dark select { background: #334155 !important; color: #e2e8f0 !important; border-color: #475569 !important; }
+  </style>
+</head>
+<body class="bg-slate-50 min-h-screen">
+<div id="app"></div>
+
+<!-- Toast -->
+<div id="toast" class="fixed bottom-5 right-5 px-4 py-3 rounded-lg shadow-xl z-50 transition-all duration-300 transform translate-y-20 opacity-0 pointer-events-none">
+  <span id="toast-msg"></span>
+</div>
+
+<script>
+// =====================================================
+// SALES DASHBOARD 2026 - ULTIMATE EDITION
+// With GitHub Gist Auto-Sync, Full Pipeline, PTO Tracking
+// =====================================================
+
+// GITHUB GIST CONFIG
+const GIST_ID = 'fea48c3ff1730757bbc3167c6735c399';
+const GITHUB_TOKEN = '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';
+const GIST_FILENAME = 'sales-dashboard-data.json';
+
+// SYNC STATE
+let syncStatus = 'idle'; // idle, syncing, synced, error
+let lastSyncTime = null;
+let syncTimeout = null;
+
+// 2026 HOLIDAYS
+const HOLIDAYS = [
+  {d:'2026-01-01',n:"New Year's Day"},{d:'2026-01-19',n:'MLK Day'},{d:'2026-02-16',n:"Presidents' Day"},
+  {d:'2026-05-25',n:'Memorial Day'},{d:'2026-06-19',n:'Juneteenth'},{d:'2026-07-03',n:'Independence Day'},
+  {d:'2026-09-07',n:'Labor Day'},{d:'2026-10-12',n:'Columbus Day'},{d:'2026-11-11',n:'Veterans Day'}
+];
+
+// OPTIMAL CALLING TIMES
+const CALL_TIMES = {
+  best: [{t:'10:00-11:30',l:'Prime Morning',n:'46% higher connects'},{t:'16:00-17:00',l:'Prime Afternoon',n:'Highest conversions'}],
+  avoid: [{t:'08:00-10:00',r:'Email catch-up, meetings'},{t:'12:00-14:00',r:'Lunch hours'}],
+  bestDays: ['Tuesday','Wednesday','Thursday'], 
+  worstDays: ['Monday','Friday']
+};
+
+// DEFAULT SETTINGS
+const DEFAULTS = {
+  name: '2026 Sales Dashboard',
+  quota: 360000,
+  targetPct: 150,
+  dealSize: 9000,
+  closeRate: 25,
+  callsPerAppt: 25,
+  emailsPerAppt: 25,
+  apptSplitCalls: 80,
+  totalWeeks: 46,
+  ptoWeeks: 7, // 4 paternity + 3 PTO
+  callDaysPerWeek: 4,
+  acctsPerMonday: 7,
+  darkMode: false
+};
+
+// EMPTY STRUCTURES
+function emptyWeek(num = 1) {
+  return {
+    num,
+    mon: { accts: 0, emails: 0, li: 0, pto: false },
+    tue: { calls: 0, emails: 0, li: 0, appts: 0, pto: false },
+    wed: { calls: 0, emails: 0, li: 0, appts: 0, pto: false },
+    thu: { calls: 0, emails: 0, li: 0, appts: 0, pto: false },
+    fri: { calls: 0, emails: 0, li: 0, appts: 0, pto: false }
+  };
+}
+
+function emptyPipeline() {
+  return {
+    q1: { value: 250000, closeRate: 25 },
+    q2: { value: 0, closeRate: 25 },
+    q3: { value: 0, closeRate: 25 },
+    q4: { value: 0, closeRate: 25 }
+  };
+}
+
+function emptyData() {
+  return {
+    settings: { ...DEFAULTS },
+    week: emptyWeek(1),
+    ytd: { weeks: 0, accts: 0, calls: 0, emails: 0, li: 0, appts: 0, deals: 0, rev: 0, ptoDays: 0 },
+    pipeline: emptyPipeline(),
+    history: [],
+    deals: [], // Track individual deals
+    streak: { current: 0, best: 0, lastDate: null }
+  };
+}
+
+// STATE
+let data = emptyData();
+let ui = { 
+  tab: 'dash', 
+  listening: false, 
+  voiceMsg: '', 
+  showSettings: false, 
+  quick: { day: 'tue', metric: 'calls', val: '' },
+  loading: true
+};
+
+// =====================================================
+// GITHUB GIST SYNC FUNCTIONS
+// =====================================================
+
+async function loadFromGist() {
+  // First, load from localStorage immediately so the UI shows
+  const local = localStorage.getItem('salesDash2026');
+  if (local) {
+    try {
+      const parsed = JSON.parse(local);
+      if (parsed && parsed.settings) {
+        data = {
+          settings: { ...DEFAULTS, ...parsed.settings },
+          week: parsed.week || emptyWeek(1),
+          ytd: parsed.ytd || emptyData().ytd,
+          pipeline: parsed.pipeline || emptyPipeline(),
+          history: parsed.history || [],
+          deals: parsed.deals || [],
+          streak: parsed.streak || { current: 0, best: 0, lastDate: null }
+        };
+      }
+    } catch (e) {
+      console.log('localStorage parse error:', e);
+    }
+  }
+  
+  // Show the UI immediately
+  ui.loading = false;
+  syncStatus = 'syncing';
+  render();
+  
+  // Then try to sync with GitHub in the background
+  try {
+    const response = await fetch(`https://api.github.com/gists/${GIST_ID}`, {
+      headers: {
+        'Authorization': `Bearer ${GITHUB_TOKEN}`,
+        'Accept': 'application/vnd.github+json'
+      }
+    });
+    
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    
+    const gist = await response.json();
+    const content = gist.files[GIST_FILENAME]?.content;
+    
+    if (content) {
+      const parsed = JSON.parse(content);
+      if (parsed && parsed.settings) {
+        // Check if cloud data is newer (has more data)
+        const cloudWeeks = parsed.ytd?.weeks || 0;
+        const localWeeks = data.ytd?.weeks || 0;
+        
+        // Use cloud data if it has more progress, or if local is empty
+        if (cloudWeeks >= localWeeks || !local) {
+          data = {
+            settings: { ...DEFAULTS, ...parsed.settings },
+            week: parsed.week || emptyWeek(1),
+            ytd: parsed.ytd || emptyData().ytd,
+            pipeline: parsed.pipeline || emptyPipeline(),
+            history: parsed.history || [],
+            deals: parsed.deals || [],
+            streak: parsed.streak || { current: 0, best: 0, lastDate: null }
+          };
+          localStorage.setItem('salesDash2026', JSON.stringify(data));
+        }
+      }
+    }
+    
+    syncStatus = 'synced';
+    lastSyncTime = new Date();
+    render();
+    return true;
+  } catch (err) {
+    console.error('Load from Gist failed:', err);
+    syncStatus = 'error';
+    render();
+    
+    // Show helpful message for first-time users
+    if (!local) {
+      toast('⚠️ Cloud sync unavailable - using local storage', 'amber');
+    }
+    return false;
+  }
+}
+
+async function saveToGist() {
+  try {
+    syncStatus = 'syncing';
+    render();
+    
+    const content = JSON.stringify(data, null, 2);
+    
+    const response = await fetch(`https://api.github.com/gists/${GIST_ID}`, {
+      method: 'PATCH',
+      headers: {
+        'Authorization': `Bearer ${GITHUB_TOKEN}`,
+        'Accept': 'application/vnd.github+json',
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        files: {
+          [GIST_FILENAME]: { content }
+        }
+      })
+    });
+    
+    if (!response.ok) throw new Error('Failed to save');
+    
+    syncStatus = 'synced';
+    lastSyncTime = new Date();
+    // Also save to localStorage as backup
+    localStorage.setItem('salesDash2026', JSON.stringify(data));
+    render();
+    return true;
+  } catch (err) {
+    console.error('Save to Gist failed:', err);
+    syncStatus = 'error';
+    // Still save to localStorage
+    localStorage.setItem('salesDash2026', JSON.stringify(data));
+    render();
+    toast('⚠️ Cloud sync failed - saved locally', 'amber');
+    return false;
+  }
+}
+
+// Debounced save - waits 2 seconds after last change before syncing
+function debouncedSave() {
+  if (syncTimeout) clearTimeout(syncTimeout);
+  syncStatus = 'syncing';
+  render();
+  syncTimeout = setTimeout(() => saveToGist(), 2000);
+}
+
+function save() {
+  localStorage.setItem('salesDash2026', JSON.stringify(data));
+  debouncedSave();
+}
+
+// =====================================================
+// UTILITY FUNCTIONS
+// =====================================================
+
+function toast(msg, color = 'emerald') {
+  const t = document.getElementById('toast');
+  t.className = `fixed bottom-5 right-5 px-4 py-3 rounded-lg shadow-xl z-50 transition-all duration-300 bg-${color}-600 text-white`;
+  document.getElementById('toast-msg').textContent = msg;
+  t.classList.remove('translate-y-20', 'opacity-0', 'pointer-events-none');
+  setTimeout(() => t.classList.add('translate-y-20', 'opacity-0', 'pointer-events-none'), 2500);
+}
+
+function getWorkingWeeks() {
+  return data.settings.totalWeeks - data.settings.ptoWeeks;
+}
+
+function targets() {
+  const s = data.settings;
+  const workWeeks = getWorkingWeeks();
+  const rev = s.quota * s.targetPct / 100;
+  const deals = Math.ceil(rev / s.dealSize);
+  const appts = Math.ceil(deals / (s.closeRate / 100));
+  const callAppts = Math.ceil(appts * s.apptSplitCalls / 100);
+  const emailAppts = appts - callAppts;
+  const calls = callAppts * s.callsPerAppt;
+  const emails = emailAppts * s.emailsPerAppt;
+  
+  return {
+    rev, deals, appts, calls, emails,
+    accts: workWeeks * s.acctsPerMonday,
+    wk: {
+      accts: s.acctsPerMonday,
+      calls: Math.ceil(calls / workWeeks),
+      emails: Math.ceil(emails / workWeeks),
+      li: 15,
+      appts: Math.ceil(appts / workWeeks)
+    },
+    dy: {
+      calls: Math.ceil(calls / (workWeeks * s.callDaysPerWeek))
+    }
+  };
+}
+
+function weekTotals() {
+  const w = data.week;
+  const ptoDays = ['mon','tue','wed','thu','fri'].filter(d => w[d].pto).length;
+  return {
+    accts: w.mon.pto ? 0 : w.mon.accts,
+    calls: (w.tue.pto ? 0 : w.tue.calls) + (w.wed.pto ? 0 : w.wed.calls) + (w.thu.pto ? 0 : w.thu.calls) + (w.fri.pto ? 0 : w.fri.calls),
+    emails: ['mon','tue','wed','thu','fri'].reduce((sum, d) => sum + (w[d].pto ? 0 : w[d].emails), 0),
+    li: ['mon','tue','wed','thu','fri'].reduce((sum, d) => sum + (w[d].pto ? 0 : w[d].li), 0),
+    appts: (w.tue.pto ? 0 : w.tue.appts) + (w.wed.pto ? 0 : w.wed.appts) + (w.thu.pto ? 0 : w.thu.appts) + (w.fri.pto ? 0 : w.fri.appts),
+    ptoDays
+  };
+}
+
+function combined() {
+  const wk = weekTotals();
+  return {
+    accts: data.ytd.accts + wk.accts,
+    calls: data.ytd.calls + wk.calls,
+    emails: data.ytd.emails + wk.emails,
+    appts: data.ytd.appts + wk.appts,
+    deals: data.ytd.deals,
+    rev: data.ytd.rev
+  };
+}
+
+function pipelineTotal() {
+  const p = data.pipeline;
+  return {
+    total: p.q1.value + p.q2.value + p.q3.value + p.q4.value,
+    projected: (p.q1.value * p.q1.closeRate / 100) + (p.q2.value * p.q2.closeRate / 100) + 
+               (p.q3.value * p.q3.closeRate / 100) + (p.q4.value * p.q4.closeRate / 100)
+  };
+}
+
+function upcomingHolidays() {
+  const today = new Date().toISOString().split('T')[0];
+  return HOLIDAYS.filter(h => h.d >= today).slice(0, 3);
+}
+
+function getCurrentQuarter() {
+  const month = new Date().getMonth();
+  if (month < 3) return 'q1';
+  if (month < 6) return 'q2';
+  if (month < 9) return 'q3';
+  return 'q4';
+}
+
+function formatMoney(val) {
+  if (val >= 1000000) return `$${(val/1000000).toFixed(1)}M`;
+  if (val >= 1000) return `$${(val/1000).toFixed(0)}K`;
+  return `$${val}`;
+}
+
+function pct(cur, tar) {
+  if (!tar) return 0;
+  return Math.min(cur / tar * 100, 100).toFixed(0);
+}
+
+// =====================================================
+// DATA MODIFICATION FUNCTIONS
+// =====================================================
+
+function setDay(day, field, val) {
+  if (field === 'pto') {
+    data.week[day].pto = val;
+  } else {
+    data.week[day][field] = parseInt(val) || 0;
+  }
+  updateStreak();
+  save();
+  render();
+}
+
+function setSetting(key, val) {
+  data.settings[key] = typeof val === 'string' && !isNaN(val) ? Number(val) : val;
+  if (key === 'darkMode') {
+    document.documentElement.classList.toggle('dark', val);
+  }
+  save();
+  render();
+}
+
+function setPipeline(quarter, field, val) {
+  data.pipeline[quarter][field] = parseInt(val) || 0;
+  save();
+  render();
+}
+
+function closeWeek() {
+  if (!confirm(`Close Week ${data.week.num}? This will add your totals to YTD.`)) return;
+  
+  const t = weekTotals();
+  data.history.push({
+    num: data.week.num,
+    closed: new Date().toISOString(),
+    ...t
+  });
+  
+  data.ytd.weeks++;
+  data.ytd.accts += t.accts;
+  data.ytd.calls += t.calls;
+  data.ytd.emails += t.emails;
+  data.ytd.li += t.li;
+  data.ytd.appts += t.appts;
+  data.ytd.ptoDays += t.ptoDays;
+  
+  data.week = emptyWeek(data.week.num + 1);
+  save();
+  toast('✓ Week closed!');
+  render();
+}
+
+function addDeal(amt, quarter = null) {
+  const q = quarter || getCurrentQuarter();
+  data.ytd.deals++;
+  data.ytd.rev += amt;
+  data.deals.push({
+    amount: amt,
+    date: new Date().toISOString(),
+    quarter: q
+  });
+  save();
+  toast(`✓ Deal added: ${formatMoney(amt)}`);
+  render();
+}
+
+function updateStreak() {
+  const today = new Date().toISOString().split('T')[0];
+  const T = targets();
+  const wk = weekTotals();
+  
+  // Check if hit daily target
+  const todayDay = ['sun','mon','tue','wed','thu','fri','sat'][new Date().getDay()];
+  if (todayDay !== 'sun' && todayDay !== 'sat') {
+    const dayData = data.week[todayDay];
+    const hitTarget = dayData.calls >= T.dy.calls || dayData.pto;
+    
+    if (hitTarget && data.streak.lastDate !== today) {
+      data.streak.current++;
+      data.streak.best = Math.max(data.streak.best, data.streak.current);
+      data.streak.lastDate = today;
+    }
+  }
+}
+
+function quickDay(type) {
+  const T = targets();
+  const todayDay = ['sun','mon','tue','wed','thu','fri','sat'][new Date().getDay()];
+  if (todayDay === 'sun' || todayDay === 'sat') {
+    toast('⚠️ It\'s the weekend!', 'amber');
+    return;
+  }
+  
+  if (type === 'pto') {
+    data.week[todayDay].pto = true;
+  } else if (type === 'good') {
+    if (todayDay === 'mon') {
+      data.week.mon.accts = T.wk.accts;
+    } else {
+      data.week[todayDay].calls = T.dy.calls;
+      data.week[todayDay].appts = Math.ceil(T.wk.appts / 4);
+    }
+  } else if (type === 'light') {
+    if (todayDay === 'mon') {
+      data.week.mon.accts = Math.ceil(T.wk.accts / 2);
+    } else {
+      data.week[todayDay].calls = Math.ceil(T.dy.calls / 2);
+    }
+  }
+  
+  save();
+  toast(`✓ ${type.charAt(0).toUpperCase() + type.slice(1)} day logged`);
+  render();
+}
+
+// =====================================================
+// VOICE INPUT
+// =====================================================
+
+function startVoice() {
+  if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+    ui.voiceMsg = '❌ Voice requires Chrome';
+    render();
+    return;
+  }
+  
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const rec = new SpeechRecognition();
+  rec.continuous = false;
+  rec.lang = 'en-US';
+  
+  rec.onstart = () => {
+    ui.listening = true;
+    ui.voiceMsg = '🎤 Listening... "Tuesday 35 calls"';
+    render();
+  };
+  
+  rec.onresult = (e) => parseVoice(e.results[0][0].transcript.toLowerCase());
+  
+  rec.onerror = (e) => {
+    ui.listening = false;
+    ui.voiceMsg = '❌ ' + e.error;
+    render();
+  };
+  
+  rec.onend = () => {
+    ui.listening = false;
+    render();
+  };
+  
+  rec.start();
+}
+
+function parseVoice(transcript) {
+  const dayMap = {
+    monday: 'mon', tuesday: 'tue', wednesday: 'wed', thursday: 'thu', friday: 'fri',
+    today: ['sun','mon','tue','wed','thu','fri','sat'][new Date().getDay()]
+  };
+  
+  const metricMap = {
+    calls: 'calls', call: 'calls', dials: 'calls', dial: 'calls',
+    emails: 'emails', email: 'emails',
+    linkedin: 'li', linked: 'li',
+    appointments: 'appts', appointment: 'appts', appts: 'appts', appt: 'appts', booked: 'appts',
+    accounts: 'accts', account: 'accts'
+  };
+  
+  let foundDay = null;
+  let foundMetric = null;
+  
+  for (const [word, day] of Object.entries(dayMap)) {
+    if (transcript.includes(word)) {
+      foundDay = day;
+      break;
+    }
+  }
+  
+  for (const [word, metric] of Object.entries(metricMap)) {
+    if (transcript.includes(word)) {
+      foundMetric = metric;
+      break;
+    }
+  }
+  
+  const numMatch = transcript.match(/\d+/);
+  const foundNum = numMatch ? parseInt(numMatch[0]) : null;
+  
+  if (foundDay && foundMetric && foundNum !== null) {
+    if (foundDay === 'mon' && foundMetric === 'accts') {
+      data.week.mon.accts += foundNum;
+    } else if (data.week[foundDay] && foundMetric in data.week[foundDay]) {
+      data.week[foundDay][foundMetric] += foundNum;
+    }
+    save();
+    ui.voiceMsg = `✅ +${foundNum} ${foundMetric} → ${foundDay}`;
+  } else {
+    ui.voiceMsg = `❓ Couldn't parse: "${transcript}"`;
+  }
+  render();
+}
+
+function quickAdd() {
+  const { day, metric, val } = ui.quick;
+  if (!val) return;
+  
+  const num = parseInt(val);
+  if (day === 'mon' && metric === 'accts') {
+    data.week.mon.accts += num;
+  } else if (data.week[day] && metric in data.week[day]) {
+    data.week[day][metric] += num;
+  }
+  
+  save();
+  ui.quick.val = '';
+  render();
+}
+
+// =====================================================
+// RENDER HELPERS
+// =====================================================
+
+function syncIndicator() {
+  const colors = {
+    idle: 'bg-gray-400',
+    syncing: 'bg-yellow-400 sync-pulse',
+    synced: 'bg-green-500',
+    error: 'bg-red-500'
+  };
+  const labels = {
+    idle: 'Ready',
+    syncing: 'Syncing...',
+    synced: lastSyncTime ? `Synced ${lastSyncTime.toLocaleTimeString()}` : 'Synced',
+    error: 'Sync error'
+  };
+  return `<div class="flex items-center gap-2 text-xs"><div class="w-2 h-2 rounded-full ${colors[syncStatus]}"></div><span class="text-gray-500">${labels[syncStatus]}</span></div>`;
+}
+
+function progressBar(cur, tar, label, color = 'bg-blue-500') {
+  const p = pct(cur, tar);
+  const done = cur >= tar;
+  return `
+    <div class="mb-3">
+      <div class="flex justify-between text-sm mb-1">
+        <span class="font-medium">${label}</span>
+        <span class="${done ? 'text-green-600 font-bold' : 'text-gray-600'}">${cur}/${tar}${done ? ' ✓' : ''}</span>
+      </div>
+      <div class="h-3 bg-gray-200 rounded-full overflow-hidden">
+        <div class="h-full ${done ? 'bg-green-500' : color} transition-all duration-300" style="width:${p}%"></div>
+      </div>
+    </div>
+  `;
+}
+
+function statCard(title, val, tar, sub, highlight = false) {
+  const p = tar ? pct(val, tar) : null;
+  const disp = typeof val === 'number' && val >= 1000 ? formatMoney(val) : val;
+  return `
+    <div class="bg-white rounded-xl p-4 shadow-sm border ${highlight ? 'ring-2 ring-blue-200' : ''}">
+      <p class="text-gray-500 text-sm">${title}</p>
+      <p class="text-2xl font-bold mt-1">${disp}</p>
+      ${p !== null ? `<p class="text-sm ${p >= 100 ? 'text-green-600' : 'text-amber-600'}">${p}% of target</p>` : ''}
+      ${sub ? `<p class="text-xs text-gray-400 mt-1">${sub}</p>` : ''}
+    </div>
+  `;
+}
+
+// =====================================================
+// MAIN RENDER
+// =====================================================
+
+function render() {
+  if (ui.loading) {
+    document.getElementById('app').innerHTML = `
+      <div class="min-h-screen flex items-center justify-center">
+        <div class="text-center">
+          <div class="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p class="text-gray-600">Loading from cloud...</p>
+        </div>
+      </div>
+    `;
+    return;
+  }
+
+  const T = targets();
+  const wk = weekTotals();
+  const comb = combined();
+  const hols = upcomingHolidays();
+  const pipe = pipelineTotal();
+  const s = data.settings;
+  const gap = Math.max(0, T.rev - data.ytd.rev - pipe.projected);
+  
+  const dayNames = { mon: 'Monday', tue: 'Tuesday', wed: 'Wednesday', thu: 'Thursday', fri: 'Friday' };
+  const todayDay = ['sun','mon','tue','wed','thu','fri','sat'][new Date().getDay()];
+  const isWeekday = todayDay !== 'sun' && todayDay !== 'sat';
+  const currentQ = getCurrentQuarter();
+
+  document.documentElement.classList.toggle('dark', s.darkMode);
+
+  document.getElementById('app').innerHTML = `
+<div class="max-w-5xl mx-auto p-4 pb-20">
+  
+  <!-- HEADER -->
+  <div class="bg-gradient-to-r from-blue-600 to-indigo-700 rounded-2xl p-6 mb-6 text-white shadow-lg">
+    <div class="flex flex-wrap justify-between gap-4">
+      <div>
+        <div class="flex items-center gap-3 mb-1">
+          <h1 class="text-2xl font-bold">${s.name}</h1>
+          ${syncIndicator()}
+        </div>
+        <p class="text-blue-100">Week ${data.week.num} of ${getWorkingWeeks()} • Target ${s.targetPct}% (${formatMoney(T.rev)})</p>
+      </div>
+      <div class="text-right">
+        <p class="text-3xl font-bold">${formatMoney(comb.rev)}</p>
+        <p class="text-blue-100 text-sm">Revenue</p>
+        <div class="flex gap-2 mt-2 justify-end">
+          <button onclick="ui.showSettings=!ui.showSettings;render()" class="text-xs bg-white/20 px-3 py-1 rounded-full hover:bg-white/30">⚙️</button>
+          <button onclick="setSetting('darkMode', !data.settings.darkMode)" class="text-xs bg-white/20 px-3 py-1 rounded-full hover:bg-white/30">${s.darkMode ? '☀️' : '🌙'}</button>
+        </div>
+      </div>
+    </div>
+    
+    <!-- PROGRESS BAR -->
+    <div class="mt-4 bg-white/10 rounded-lg p-3">
+      <div class="flex justify-between text-sm">
+        <span>Progress to ${formatMoney(T.rev)}</span>
+        <span class="font-semibold">${(comb.rev / T.rev * 100).toFixed(1)}%</span>
+      </div>
+      <div class="h-3 bg-white/20 rounded-full mt-2 overflow-hidden">
+        <div class="h-full bg-gradient-to-r from-green-400 to-emerald-400 transition-all duration-500" style="width:${Math.min(comb.rev / T.rev * 100, 100)}%"></div>
+      </div>
+      <div class="flex justify-between text-xs text-blue-200 mt-1">
+        <span>${comb.deals} deals closed</span>
+        <span>${T.deals - comb.deals} to go</span>
+      </div>
+    </div>
+    
+    <!-- STREAK -->
+    <div class="mt-3 flex items-center gap-4 text-sm">
+      <span class="bg-white/20 px-3 py-1 rounded-full">🔥 Streak: ${data.streak.current} days</span>
+      <span class="text-blue-200">Best: ${data.streak.best} days</span>
+    </div>
+  </div>
+
+  <!-- SETTINGS PANEL -->
+  ${ui.showSettings ? `
+  <div class="bg-white rounded-xl p-6 shadow-lg border-2 border-blue-200 mb-6">
+    <div class="flex justify-between mb-4">
+      <h2 class="font-bold text-lg">⚙️ Settings</h2>
+      <button onclick="ui.showSettings=false;render()" class="text-2xl text-gray-400 hover:text-gray-600">&times;</button>
+    </div>
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+      <div><label class="text-xs text-gray-500">Dashboard Name</label><input value="${s.name}" onchange="setSetting('name',this.value)" class="w-full p-2 border rounded mt-1 text-sm"></div>
+      <div><label class="text-xs text-gray-500">Quota ($)</label><input type="number" value="${s.quota}" onchange="setSetting('quota',this.value)" class="w-full p-2 border rounded mt-1 text-sm"></div>
+      <div><label class="text-xs text-gray-500">Target %</label><input type="number" value="${s.targetPct}" onchange="setSetting('targetPct',this.value)" class="w-full p-2 border rounded mt-1 text-sm"></div>
+      <div><label class="text-xs text-gray-500">Avg Deal ($)</label><input type="number" value="${s.dealSize}" onchange="setSetting('dealSize',this.value)" class="w-full p-2 border rounded mt-1 text-sm"></div>
+      <div><label class="text-xs text-gray-500">Close Rate %</label><input type="number" value="${s.closeRate}" onchange="setSetting('closeRate',this.value)" class="w-full p-2 border rounded mt-1 text-sm"></div>
+      <div><label class="text-xs text-gray-500">Calls per Appt</label><input type="number" value="${s.callsPerAppt}" onchange="setSetting('callsPerAppt',this.value)" class="w-full p-2 border rounded mt-1 text-sm"></div>
+      <div><label class="text-xs text-gray-500">Total Weeks</label><input type="number" value="${s.totalWeeks}" onchange="setSetting('totalWeeks',this.value)" class="w-full p-2 border rounded mt-1 text-sm"></div>
+      <div><label class="text-xs text-gray-500">PTO Weeks</label><input type="number" value="${s.ptoWeeks}" onchange="setSetting('ptoWeeks',this.value)" class="w-full p-2 border rounded mt-1 text-sm"></div>
+      <div><label class="text-xs text-gray-500">Call Days/Week</label><input type="number" value="${s.callDaysPerWeek}" onchange="setSetting('callDaysPerWeek',this.value)" class="w-full p-2 border rounded mt-1 text-sm"></div>
+      <div><label class="text-xs text-gray-500">Accts/Monday</label><input type="number" value="${s.acctsPerMonday}" onchange="setSetting('acctsPerMonday',this.value)" class="w-full p-2 border rounded mt-1 text-sm"></div>
+    </div>
+    <div class="text-xs text-gray-500 bg-gray-50 p-3 rounded">
+      <strong>Calculated:</strong> ${getWorkingWeeks()} working weeks → ${T.deals} deals → ${T.appts} appts → ${T.calls.toLocaleString()} calls needed
+    </div>
+  </div>
+  ` : ''}
+
+  <!-- TABS -->
+  <div class="flex gap-2 mb-6 overflow-x-auto pb-1">
+    ${['dash', 'pipe', 'sched', 'history'].map(tab => `
+      <button onclick="ui.tab='${tab}';render()" 
+              class="px-4 py-2 rounded-lg font-medium whitespace-nowrap transition-all ${ui.tab === tab ? 'bg-blue-600 text-white shadow' : 'bg-white border hover:bg-gray-50'}">
+        ${{ dash: '📊 Dashboard', pipe: '💰 Pipeline', sched: '📅 Schedule', history: '📈 History' }[tab]}
+      </button>
+    `).join('')}
+  </div>
+
+  <!-- DASHBOARD TAB -->
+  ${ui.tab === 'dash' ? `
+  
+  <!-- QUICK DAY BUTTONS -->
+  ${isWeekday ? `
+  <div class="bg-white rounded-xl p-4 shadow-sm border mb-6">
+    <div class="flex flex-wrap items-center gap-3">
+      <span class="font-medium text-gray-700">Quick Log Today:</span>
+      <button onclick="quickDay('good')" class="px-4 py-2 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700">✓ Good Day</button>
+      <button onclick="quickDay('light')" class="px-4 py-2 bg-amber-500 text-white rounded-lg font-medium hover:bg-amber-600">½ Light Day</button>
+      <button onclick="quickDay('pto')" class="px-4 py-2 bg-gray-500 text-white rounded-lg font-medium hover:bg-gray-600">🏖️ PTO</button>
+      <span class="text-sm text-gray-500 ml-auto">${dayNames[todayDay] || 'Weekend'}</span>
+    </div>
+  </div>
+  ` : ''}
+  
+  <!-- STAT CARDS -->
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+    ${statCard('Deals', comb.deals, T.deals, `${T.deals - comb.deals} to go`)}
+    ${statCard('Appointments', comb.appts, Math.ceil((data.ytd.weeks + 1) * T.wk.appts), `This week: +${wk.appts}`, wk.appts > 0)}
+    ${statCard('Total Calls', comb.calls, Math.ceil((data.ytd.weeks + 1) * T.wk.calls), `This week: +${wk.calls}`, wk.calls > 0)}
+    ${statCard('Accounts', comb.accts, Math.ceil((data.ytd.weeks + 1) * T.wk.accts), `This week: +${wk.accts}`, wk.accts > 0)}
+  </div>
+
+  <!-- HOLIDAYS -->
+  ${hols.length ? `
+  <div class="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-6">
+    <h3 class="font-semibold text-amber-800 mb-2">📅 Upcoming Holidays</h3>
+    <div class="flex flex-wrap gap-2">
+      ${hols.map(h => `<span class="bg-amber-100 text-amber-800 px-3 py-1 rounded-full text-sm">${h.n}: ${new Date(h.d + 'T12:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>`).join('')}
+    </div>
+  </div>
+  ` : ''}
+
+  <!-- QUICK UPDATE -->
+  <div class="bg-white rounded-xl p-4 shadow-sm border mb-6">
+    <h2 class="font-semibold mb-3">⚡ Quick Update</h2>
+    <div class="flex flex-wrap gap-3 items-center">
+      <button onclick="startVoice()" class="px-4 py-2 rounded-lg font-medium ${ui.listening ? 'bg-red-500 text-white listening' : 'bg-blue-600 text-white hover:bg-blue-700'}">
+        ${ui.listening ? '🎤 Listening...' : '🎤 Voice'}
+      </button>
+      <select onchange="ui.quick.day=this.value;render()" class="p-2 border rounded-lg">
+        ${['mon', 'tue', 'wed', 'thu', 'fri'].map(d => `<option value="${d}" ${ui.quick.day === d ? 'selected' : ''}>${dayNames[d]}</option>`).join('')}
+      </select>
+      <select onchange="ui.quick.metric=this.value;render()" class="p-2 border rounded-lg">
+        ${[['calls', 'Calls'], ['emails', 'Emails'], ['li', 'LinkedIn'], ['appts', 'Appts'], ['accts', 'Accounts']].map(([v, l]) => `<option value="${v}" ${ui.quick.metric === v ? 'selected' : ''}>${l}</option>`).join('')}
+      </select>
+      <input type="number" value="${ui.quick.val}" oninput="ui.quick.val=this.value" onkeypress="if(event.key==='Enter')quickAdd()" placeholder="#" class="w-20 p-2 border rounded-lg text-center text-lg font-bold">
+      <button onclick="quickAdd()" class="px-4 py-2 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700">+ Add</button>
+    </div>
+    ${ui.voiceMsg ? `<p class="text-sm mt-2 ${ui.voiceMsg.startsWith('✅') ? 'text-green-600' : ui.voiceMsg.startsWith('❌') ? 'text-red-600' : 'text-gray-500'}">${ui.voiceMsg}</p>` : ''}
+  </div>
+
+  <!-- WEEK PROGRESS + DAILY ENTRY -->
+  <div class="grid md:grid-cols-2 gap-6 mb-6">
+    <div class="bg-white rounded-xl p-4 shadow-sm border">
+      <h2 class="font-semibold mb-4">Week ${data.week.num} Progress</h2>
+      ${progressBar(wk.accts, T.wk.accts, 'Accounts', 'bg-purple-500')}
+      ${progressBar(wk.calls, T.wk.calls, 'Calls', 'bg-blue-500')}
+      ${progressBar(wk.emails, T.wk.emails, 'Emails', 'bg-cyan-500')}
+      ${progressBar(wk.appts, T.wk.appts, 'Appointments', 'bg-green-500')}
+      ${wk.ptoDays > 0 ? `<p class="text-sm text-gray-500 mt-2">📅 ${wk.ptoDays} PTO day${wk.ptoDays > 1 ? 's' : ''} this week</p>` : ''}
+    </div>
+    
+    <div class="bg-white rounded-xl p-4 shadow-sm border">
+      <h2 class="font-semibold mb-4">Daily Entry</h2>
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="text-gray-500 text-xs">
+              <th class="text-left py-2">Day</th>
+              <th class="text-center">PTO</th>
+              <th class="text-center">Accts</th>
+              <th class="text-center">Calls</th>
+              <th class="text-center">Appts</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${['mon', 'tue', 'wed', 'thu', 'fri'].map(d => {
+              const day = data.week[d];
+              const isToday = d === todayDay;
+              const isPto = day.pto;
+              return `
+                <tr class="border-t ${isToday ? 'bg-blue-50' : ''} ${isPto ? 'opacity-50' : ''}">
+                  <td class="py-2 font-medium ${isToday ? 'text-blue-700' : ''}">${dayNames[d]}${isToday ? ' •' : ''}</td>
+                  <td class="text-center"><input type="checkbox" ${isPto ? 'checked' : ''} onchange="setDay('${d}','pto',this.checked)" class="w-4 h-4"></td>
+                  <td class="text-center">${d === 'mon' ? `<input type="number" value="${day.accts || ''}" onchange="setDay('${d}','accts',this.value)" class="w-12 p-1 border rounded text-center" ${isPto ? 'disabled' : ''}>` : '<span class="text-gray-300">—</span>'}</td>
+                  <td class="text-center">${d !== 'mon' ? `<input type="number" value="${day.calls || ''}" onchange="setDay('${d}','calls',this.value)" class="w-12 p-1 border rounded text-center" ${isPto ? 'disabled' : ''}>` : '<span class="text-gray-300">—</span>'}</td>
+                  <td class="text-center">${d !== 'mon' ? `<input type="number" value="${day.appts || ''}" onchange="setDay('${d}','appts',this.value)" class="w-12 p-1 border rounded text-center" ${isPto ? 'disabled' : ''}>` : '<span class="text-gray-300">—</span>'}</td>
+                </tr>
+              `;
+            }).join('')}
+            <tr class="border-t-2 font-bold bg-gray-50">
+              <td class="py-2" colspan="2">Total</td>
+              <td class="text-center ${wk.accts >= T.wk.accts ? 'text-green-600' : ''}">${wk.accts}</td>
+              <td class="text-center ${wk.calls >= T.wk.calls ? 'text-green-600' : ''}">${wk.calls}</td>
+              <td class="text-center ${wk.appts >= T.wk.appts ? 'text-green-600' : ''}">${wk.appts}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ACTIONS -->
+  <div class="bg-white rounded-xl p-4 shadow-sm border mb-6">
+    <div class="flex flex-wrap gap-3 items-center">
+      <button onclick="closeWeek()" class="px-5 py-2 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700">✓ Close Week</button>
+      <button onclick="addDeal(${s.dealSize})" class="px-5 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700">+ Deal (${formatMoney(s.dealSize)})</button>
+      <button onclick="const a=prompt('Deal amount?','${s.dealSize}');if(a)addDeal(+a)" class="px-4 py-2 bg-gray-100 rounded-lg hover:bg-gray-200">+ Custom Deal</button>
+      <span class="ml-auto text-sm text-gray-500">${data.ytd.weeks} weeks • ${comb.deals} deals • ${formatMoney(comb.rev)}</span>
+    </div>
+  </div>
+
+  <!-- YTD SUMMARY -->
+  <div class="bg-gray-100 rounded-xl p-4">
+    <h2 class="font-semibold mb-3">Year-to-Date</h2>
+    <div class="grid grid-cols-3 md:grid-cols-6 gap-3 text-center">
+      <div class="bg-white rounded-lg p-3"><p class="text-xl font-bold">${data.ytd.weeks}</p><p class="text-xs text-gray-500">Weeks</p></div>
+      <div class="bg-white rounded-lg p-3"><p class="text-xl font-bold">${data.ytd.calls.toLocaleString()}</p><p class="text-xs text-gray-500">Calls</p></div>
+      <div class="bg-white rounded-lg p-3"><p class="text-xl font-bold">${data.ytd.emails}</p><p class="text-xs text-gray-500">Emails</p></div>
+      <div class="bg-white rounded-lg p-3"><p class="text-xl font-bold">${data.ytd.accts}</p><p class="text-xs text-gray-500">Accounts</p></div>
+      <div class="bg-white rounded-lg p-3"><p class="text-xl font-bold">${data.ytd.appts}</p><p class="text-xs text-gray-500">Appts</p></div>
+      <div class="bg-white rounded-lg p-3"><p class="text-xl font-bold text-green-600">${data.ytd.deals}</p><p class="text-xs text-gray-500">Deals</p></div>
+    </div>
+  </div>
+  
+  ` : ''}
+
+  <!-- PIPELINE TAB -->
+  ${ui.tab === 'pipe' ? `
+  <div class="bg-white rounded-xl p-6 shadow-sm border mb-6">
+    <h2 class="font-semibold mb-4">💰 Pipeline by Quarter</h2>
+    
+    <div class="grid md:grid-cols-4 gap-4 mb-6">
+      ${['q1', 'q2', 'q3', 'q4'].map(q => {
+        const qData = data.pipeline[q];
+        const proj = qData.value * qData.closeRate / 100;
+        const isCurrent = q === currentQ;
+        return `
+          <div class="rounded-xl p-4 ${isCurrent ? 'bg-blue-50 ring-2 ring-blue-200' : 'bg-gray-50'}">
+            <div class="flex justify-between items-center mb-3">
+              <h3 class="font-bold text-lg">${q.toUpperCase()}</h3>
+              ${isCurrent ? '<span class="text-xs bg-blue-600 text-white px-2 py-0.5 rounded-full">Current</span>' : ''}
+            </div>
+            <div class="mb-3">
+              <label class="text-xs text-gray-500">Pipeline Value</label>
+              <div class="flex items-center gap-1">
+                <span>$</span>
+                <input type="number" value="${qData.value}" onchange="setPipeline('${q}','value',this.value)" 
+                       class="w-full p-2 border rounded font-bold text-lg">
+              </div>
+            </div>
+            <div class="mb-3">
+              <label class="text-xs text-gray-500">Close Rate %</label>
+              <input type="number" value="${qData.closeRate}" onchange="setPipeline('${q}','closeRate',this.value)" 
+                     class="w-full p-2 border rounded">
+            </div>
+            <div class="bg-white rounded p-2 text-center">
+              <p class="text-xs text-gray-500">Projected</p>
+              <p class="font-bold text-green-600">${formatMoney(proj)}</p>
+            </div>
+          </div>
+        `;
+      }).join('')}
+    </div>
+    
+    <!-- PIPELINE SUMMARY -->
+    <div class="bg-gradient-to-r from-gray-50 to-gray-100 rounded-xl p-4">
+      <div class="grid md:grid-cols-2 gap-6">
+        <div>
+          <h3 class="font-medium text-gray-700 mb-3">Pipeline Summary</h3>
+          <div class="space-y-2 text-sm">
+            <div class="flex justify-between py-2 border-b"><span>Total Pipeline</span><span class="font-bold">${formatMoney(pipe.total)}</span></div>
+            <div class="flex justify-between py-2 border-b"><span>Weighted Projection</span><span class="font-bold text-green-600">${formatMoney(pipe.projected)}</span></div>
+            <div class="flex justify-between py-2 border-b"><span>YTD Closed</span><span class="font-bold text-green-600">${formatMoney(data.ytd.rev)}</span></div>
+            <div class="flex justify-between py-2 border-b"><span>Combined (Closed + Projected)</span><span class="font-bold">${formatMoney(data.ytd.rev + pipe.projected)}</span></div>
+          </div>
+        </div>
+        <div>
+          <h3 class="font-medium text-gray-700 mb-3">Gap Analysis</h3>
+          <div class="space-y-2 text-sm">
+            <div class="flex justify-between py-2 border-b"><span>Target Revenue</span><span class="font-bold">${formatMoney(T.rev)}</span></div>
+            <div class="flex justify-between py-2 bg-amber-50 px-3 rounded font-bold text-amber-800"><span>Gap to Fill</span><span>${formatMoney(gap)}</span></div>
+            <div class="flex justify-between py-2 border-b"><span>Deals Needed</span><span class="font-semibold">${Math.ceil(gap / s.dealSize)}</span></div>
+            <div class="flex justify-between py-2"><span>Appointments Needed</span><span class="font-semibold">${Math.ceil(gap / s.dealSize / (s.closeRate / 100))}</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  ` : ''}
+
+  <!-- SCHEDULE TAB -->
+  ${ui.tab === 'sched' ? `
+  <div class="bg-white rounded-xl p-6 shadow-sm border mb-6">
+    <h2 class="font-semibold mb-4">⏰ Optimal Calling Times</h2>
+    <div class="bg-blue-50 p-3 rounded-lg mb-4">
+      <p class="text-sm text-blue-800"><strong>For Finance/Ops Decision-Makers:</strong> Prefer 10-11 AM and 4-5 PM. Avoid month-end close periods.</p>
+    </div>
+    <div class="grid md:grid-cols-2 gap-4 mb-4">
+      <div>
+        <h3 class="font-medium text-green-700 mb-2">✅ Best Windows</h3>
+        ${CALL_TIMES.best.map(t => `<div class="optimal p-3 rounded-lg mb-2"><p class="font-bold">${t.t}</p><p class="text-sm">${t.l}</p><p class="text-xs text-gray-600">${t.n}</p></div>`).join('')}
+      </div>
+      <div>
+        <h3 class="font-medium text-red-700 mb-2">❌ Avoid</h3>
+        ${CALL_TIMES.avoid.map(t => `<div class="avoid p-3 rounded-lg mb-2"><p class="font-bold">${t.t}</p><p class="text-sm text-gray-600">${t.r}</p></div>`).join('')}
+      </div>
+    </div>
+    <div class="border-t pt-4">
+      <h3 class="font-medium mb-2">Best Days to Call</h3>
+      <div class="flex gap-2 flex-wrap">
+        ${['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'].map(d => `
+          <span class="px-4 py-2 rounded-full text-sm font-medium ${CALL_TIMES.bestDays.includes(d) ? 'bg-green-100 text-green-800 ring-2 ring-green-300' : CALL_TIMES.worstDays.includes(d) ? 'bg-red-100 text-red-800' : 'bg-gray-100'}">
+            ${d} ${CALL_TIMES.bestDays.includes(d) ? '⭐' : CALL_TIMES.worstDays.includes(d) ? '⚠️' : ''}
+          </span>
+        `).join('')}
+      </div>
+    </div>
+  </div>
+
+  <div class="grid md:grid-cols-2 gap-6 mb-6">
+    <div class="bg-white rounded-xl p-6 shadow-sm border">
+      <h2 class="font-semibold mb-4">📅 Monday: Research Day</h2>
+      <ul class="space-y-2 text-sm">
+        <li>8:00-9:30 • 1:1 + Team meeting</li>
+        <li class="bg-purple-50 px-2 py-1 rounded">9:30-12:00 • <strong>Build 4 accounts</strong></li>
+        <li>12:00-1:00 • Lunch</li>
+        <li class="bg-purple-50 px-2 py-1 rounded">1:00-2:30 • <strong>Build 3 accounts</strong></li>
+        <li>2:30-4:30 • Meetings + week planning</li>
+      </ul>
+      <p class="mt-3 text-sm font-medium text-purple-700 bg-purple-50 p-2 rounded">📦 Output: ${T.wk.accts} accounts</p>
+    </div>
+    <div class="bg-white rounded-xl p-6 shadow-sm border">
+      <h2 class="font-semibold mb-4">📞 Tue-Fri: Calling Days</h2>
+      <ul class="space-y-2 text-sm">
+        <li>8:00-8:30 • Prep + task review</li>
+        <li class="optimal px-2 py-1 rounded">8:30-10:30 • <strong>Call Block #1 (15 dials)</strong></li>
+        <li class="optimal px-2 py-1 rounded">10:30-12:00 • <strong>Call Block #2 (8 dials)</strong></li>
+        <li>12:00-1:00 • Lunch</li>
+        <li>1:00-2:30 • Meetings</li>
+        <li class="optimal px-2 py-1 rounded">3:00-4:00 • <strong>Call Block #3 (8 dials)</strong></li>
+        <li>4:00-4:30 • Follow-up emails</li>
+      </ul>
+      <p class="mt-3 text-sm font-medium text-blue-700 bg-blue-50 p-2 rounded">📞 Output: ${T.dy.calls} calls/day</p>
+    </div>
+  </div>
+
+  <!-- HOLIDAY CALENDAR -->
+  <div class="bg-amber-50 rounded-xl p-4 border border-amber-200">
+    <h3 class="font-semibold text-amber-800 mb-3">📆 2026 Holidays</h3>
+    <div class="grid grid-cols-2 md:grid-cols-5 gap-2">
+      ${HOLIDAYS.map(h => `
+        <div class="bg-white p-2 rounded text-center text-sm">
+          <p class="font-medium">${h.n}</p>
+          <p class="text-gray-500 text-xs">${new Date(h.d + 'T12:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</p>
+        </div>
+      `).join('')}
+    </div>
+  </div>
+  ` : ''}
+
+  <!-- HISTORY TAB -->
+  ${ui.tab === 'history' ? `
+  <div class="grid md:grid-cols-2 gap-6 mb-6">
+    <!-- WEEK HISTORY -->
+    <div class="bg-white rounded-xl p-6 shadow-sm border">
+      <h2 class="font-semibold mb-4">📊 Week History</h2>
+      ${data.history.length > 0 ? `
+        <div class="max-h-80 overflow-auto">
+          <table class="w-full text-sm">
+            <thead class="bg-gray-100 sticky top-0">
+              <tr><th class="text-left p-2">Week</th><th class="text-center p-2">Calls</th><th class="text-center p-2">Appts</th><th class="text-center p-2">Accts</th></tr>
+            </thead>
+            <tbody>
+              ${data.history.slice().reverse().map(w => `
+                <tr class="border-b hover:bg-gray-50">
+                  <td class="p-2">Week ${w.num}</td>
+                  <td class="text-center p-2 ${w.calls >= T.wk.calls ? 'text-green-600 font-medium' : ''}">${w.calls}</td>
+                  <td class="text-center p-2 ${w.appts >= T.wk.appts ? 'text-green-600 font-medium' : ''}">${w.appts}</td>
+                  <td class="text-center p-2">${w.accts}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      ` : '<p class="text-gray-500 text-sm">No weeks closed yet.</p>'}
+    </div>
+
+    <!-- DEAL HISTORY -->
+    <div class="bg-white rounded-xl p-6 shadow-sm border">
+      <h2 class="font-semibold mb-4">💵 Deal History</h2>
+      ${data.deals.length > 0 ? `
+        <div class="max-h-80 overflow-auto">
+          <table class="w-full text-sm">
+            <thead class="bg-gray-100 sticky top-0">
+              <tr><th class="text-left p-2">Date</th><th class="text-center p-2">Quarter</th><th class="text-right p-2">Amount</th></tr>
+            </thead>
+            <tbody>
+              ${data.deals.slice().reverse().map(d => `
+                <tr class="border-b hover:bg-gray-50">
+                  <td class="p-2">${new Date(d.date).toLocaleDateString()}</td>
+                  <td class="text-center p-2">${d.quarter.toUpperCase()}</td>
+                  <td class="text-right p-2 font-medium text-green-600">${formatMoney(d.amount)}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+        <div class="mt-4 pt-4 border-t">
+          <div class="flex justify-between font-bold">
+            <span>Total</span>
+            <span class="text-green-600">${formatMoney(data.deals.reduce((s, d) => s + d.amount, 0))}</span>
+          </div>
+        </div>
+      ` : '<p class="text-gray-500 text-sm">No deals logged yet.</p>'}
+    </div>
+  </div>
+
+  <!-- PERFORMANCE INSIGHTS -->
+  ${data.history.length >= 2 ? `
+  <div class="bg-white rounded-xl p-6 shadow-sm border">
+    <h2 class="font-semibold mb-4">📈 Performance Insights</h2>
+    <div class="grid md:grid-cols-3 gap-4">
+      <div class="bg-blue-50 rounded-lg p-4">
+        <p class="text-sm text-blue-600 font-medium">Avg Calls/Week</p>
+        <p class="text-2xl font-bold">${Math.round(data.history.reduce((s, w) => s + w.calls, 0) / data.history.length)}</p>
+        <p class="text-xs text-gray-500">Target: ${T.wk.calls}</p>
+      </div>
+      <div class="bg-green-50 rounded-lg p-4">
+        <p class="text-sm text-green-600 font-medium">Avg Appts/Week</p>
+        <p class="text-2xl font-bold">${(data.history.reduce((s, w) => s + w.appts, 0) / data.history.length).toFixed(1)}</p>
+        <p class="text-xs text-gray-500">Target: ${T.wk.appts}</p>
+      </div>
+      <div class="bg-purple-50 rounded-lg p-4">
+        <p class="text-sm text-purple-600 font-medium">Best Week</p>
+        <p class="text-2xl font-bold">Week ${data.history.reduce((best, w) => w.calls > best.calls ? w : best, data.history[0]).num}</p>
+        <p class="text-xs text-gray-500">${data.history.reduce((best, w) => w.calls > best.calls ? w : best, data.history[0]).calls} calls</p>
+      </div>
+    </div>
+  </div>
+  ` : ''}
+  ` : ''}
+
+</div>
+  `;
+}
+
+// =====================================================
+// INITIALIZE
+// =====================================================
+
+// Load from Gist on startup
+loadFromGist();
+
+</script>
+</body>
+</html>
