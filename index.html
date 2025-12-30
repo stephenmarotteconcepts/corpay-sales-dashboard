@@ -98,7 +98,8 @@ function emptyWeek(num = 1) {
     tue: { accounts: 0, calls: 0, meetings: 0, pto: false },
     wed: { accounts: 0, calls: 0, meetings: 0, pto: false },
     thu: { accounts: 0, calls: 0, meetings: 0, pto: false },
-    fri: { accounts: 0, calls: 0, meetings: 0, pto: false }
+    fri: { accounts: 0, calls: 0, meetings: 0, pto: false },
+    tasksCompleted: []
   };
 }
 
@@ -108,12 +109,13 @@ function emptyData() {
     week: emptyWeek(1),
     ytd: { weeks: 0, accounts: 0, calls: 0, meetings: 0, revenue: 0, ptoDays: 0 },
     history: [],
-    revenueLog: []
+    revenueLog: [],
+    todos: []
   };
 }
 
 let data = emptyData();
-let ui = { tab: 'dash', showSettings: false, loading: true, revenueInput: '' };
+let ui = { tab: 'dash', showSettings: false, loading: true, revenueInput: '', todoInput: '' };
 
 // SYNC FUNCTIONS
 async function createBin() {
@@ -296,6 +298,7 @@ function closeWeek() {
     calls: t.calls,
     meetings: t.meetings,
     ptoDays: t.ptoDays,
+    tasksCompleted: data.week.tasksCompleted || [],
     targetsHit: {
       accounts: t.accounts >= TARGETS.accounts,
       calls: t.calls >= TARGETS.calls,
@@ -310,7 +313,8 @@ function closeWeek() {
   data.ytd.meetings += t.meetings;
   data.ytd.ptoDays += t.ptoDays;
   
-  // Start new week
+  // Clear completed todos and start new week
+  data.todos = (data.todos || []).filter(t => !t.done);
   data.week = emptyWeek(data.week.num + 1);
   save();
   toast('✓ Week closed!');
@@ -335,6 +339,65 @@ function addRevenue() {
   ui.revenueInput = '';
   save();
   toast(`✓ Added ${formatMoneyFull(amount)} revenue`);
+  render();
+}
+
+function addTodo() {
+  const text = ui.todoInput.trim();
+  if (!text) return;
+  
+  data.todos = data.todos || [];
+  data.todos.push({
+    id: Date.now(),
+    text: text,
+    done: false,
+    createdAt: new Date().toISOString()
+  });
+  
+  ui.todoInput = '';
+  save();
+  render();
+}
+
+function toggleTodo(id) {
+  data.todos = data.todos || [];
+  const todo = data.todos.find(t => t.id === id);
+  if (todo) {
+    todo.done = !todo.done;
+    if (todo.done) {
+      todo.completedAt = new Date().toISOString();
+      // Track completed task for this week
+      data.week.tasksCompleted = data.week.tasksCompleted || [];
+      data.week.tasksCompleted.push({
+        text: todo.text,
+        completedAt: todo.completedAt
+      });
+    } else {
+      // Remove from week's completed if unchecked
+      data.week.tasksCompleted = (data.week.tasksCompleted || []).filter(t => t.text !== todo.text);
+    }
+    save();
+    render();
+  }
+}
+
+function deleteTodo(id) {
+  data.todos = data.todos || [];
+  data.todos = data.todos.filter(t => t.id !== id);
+  save();
+  render();
+}
+
+function clearCompletedTodos() {
+  data.todos = data.todos || [];
+  const completed = data.todos.filter(t => t.done).length;
+  if (completed === 0) {
+    toast('No completed tasks to clear', 'amber');
+    return;
+  }
+  data.todos = data.todos.filter(t => !t.done);
+  save();
+  toast(`✓ Cleared ${completed} completed task${completed > 1 ? 's' : ''}`);
   render();
 }
 
@@ -421,6 +484,52 @@ function render() {
   </div>
 
   ${ui.tab === 'dash' ? `
+  <!-- TO-DO LIST (TOP OF PAGE) -->
+  <div class="bg-white rounded-xl p-4 shadow-sm border mb-6">
+    <div class="flex justify-between items-center mb-4">
+      <h2 class="font-semibold">📝 Today's Tasks</h2>
+      <div class="flex items-center gap-3">
+        <span class="text-sm text-gray-500">${(data.todos || []).filter(t => t.done).length} of ${(data.todos || []).length} done</span>
+        ${(data.todos || []).filter(t => t.done).length > 0 ? `
+        <button onclick="clearCompletedTodos()" class="text-xs text-gray-500 hover:text-red-600">Clear completed</button>
+        ` : ''}
+      </div>
+    </div>
+    
+    <!-- Add Task -->
+    <div class="flex gap-2 mb-4">
+      <input type="text" value="${ui.todoInput}" oninput="ui.todoInput=this.value" onkeypress="if(event.key==='Enter')addTodo()" placeholder="Add a task..." class="flex-1 p-3 border rounded-lg">
+      <button onclick="addTodo()" class="px-4 py-3 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700">+ Add</button>
+    </div>
+    
+    <!-- Task List -->
+    ${(data.todos || []).length > 0 ? `
+    <div class="space-y-2">
+      ${(data.todos || []).filter(t => !t.done).map(t => `
+      <div class="flex items-center gap-3 p-3 bg-gray-50 rounded-lg group">
+        <input type="checkbox" onchange="toggleTodo(${t.id})" class="w-5 h-5 cursor-pointer">
+        <span class="flex-1">${t.text}</span>
+        <button onclick="deleteTodo(${t.id})" class="text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity">✕</button>
+      </div>`).join('')}
+      
+      ${(data.todos || []).filter(t => t.done).length > 0 ? `
+      <div class="pt-2 mt-2 border-t">
+        <p class="text-xs text-gray-400 mb-2">Completed today</p>
+        ${(data.todos || []).filter(t => t.done).map(t => `
+        <div class="flex items-center gap-3 p-2 rounded-lg group opacity-50">
+          <input type="checkbox" checked onchange="toggleTodo(${t.id})" class="w-5 h-5 cursor-pointer">
+          <span class="flex-1 line-through text-gray-500">${t.text}</span>
+          <button onclick="deleteTodo(${t.id})" class="text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity">✕</button>
+        </div>`).join('')}
+      </div>` : ''}
+    </div>
+    ` : `
+    <div class="text-center py-6 text-gray-400">
+      <p>No tasks yet. Add one above!</p>
+    </div>
+    `}
+  </div>
+
   <!-- WEEK ENTRY -->
   <div class="bg-white rounded-xl p-4 shadow-sm border mb-6">
     <h2 class="font-semibold mb-4">Week ${data.week.num} Activity</h2>
@@ -524,40 +633,60 @@ function render() {
   <div class="bg-white rounded-xl p-6 shadow-sm border">
     <h2 class="font-semibold mb-4">📜 Week History</h2>
     ${data.history && data.history.length > 0 ? `
-    <div class="overflow-x-auto">
-      <table class="w-full text-sm">
-        <thead>
-          <tr class="text-gray-500 text-xs border-b">
-            <th class="text-left py-2 px-2">Week</th>
-            <th class="text-center px-2">Accounts</th>
-            <th class="text-center px-2">Calls</th>
-            <th class="text-center px-2">Meetings</th>
-            <th class="text-center px-2">PTO Days</th>
-            <th class="text-center px-2">Status</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${data.history.slice().reverse().map(w => {
-            const allHit = w.targetsHit?.accounts && w.targetsHit?.calls && w.targetsHit?.meetings;
-            const someHit = w.targetsHit?.accounts || w.targetsHit?.calls || w.targetsHit?.meetings;
-            return `
-            <tr class="border-b ${allHit ? 'target-hit' : someHit ? '' : 'target-miss'}">
-              <td class="py-3 px-2 font-medium">Week ${w.num}</td>
-              <td class="text-center px-2 ${w.targetsHit?.accounts ? 'text-green-600 font-bold' : 'text-red-600'}">${w.accounts}/${TARGETS.accounts}</td>
-              <td class="text-center px-2 ${w.targetsHit?.calls ? 'text-green-600 font-bold' : 'text-red-600'}">${w.calls}/${TARGETS.calls}</td>
-              <td class="text-center px-2 ${w.targetsHit?.meetings ? 'text-green-600 font-bold' : 'text-red-600'}">${w.meetings}/${TARGETS.meetings}</td>
-              <td class="text-center px-2">${w.ptoDays || 0}</td>
-              <td class="text-center px-2">${allHit ? '✅ All Hit' : someHit ? '⚠️ Partial' : '❌ Missed'}</td>
-            </tr>`;
-          }).join('')}
-        </tbody>
-      </table>
+    <div class="space-y-4">
+      ${data.history.slice().reverse().map(w => {
+        const allHit = w.targetsHit?.accounts && w.targetsHit?.calls && w.targetsHit?.meetings;
+        const someHit = w.targetsHit?.accounts || w.targetsHit?.calls || w.targetsHit?.meetings;
+        const tasksCount = (w.tasksCompleted || []).length;
+        return `
+        <div class="border rounded-lg overflow-hidden ${allHit ? 'border-green-300 bg-green-50' : someHit ? 'border-amber-300 bg-amber-50' : 'border-red-300 bg-red-50'}">
+          <!-- Week Header -->
+          <div class="p-4">
+            <div class="flex justify-between items-center mb-3">
+              <h3 class="font-bold text-lg">Week ${w.num}</h3>
+              <span class="text-sm px-3 py-1 rounded-full ${allHit ? 'bg-green-200 text-green-800' : someHit ? 'bg-amber-200 text-amber-800' : 'bg-red-200 text-red-800'}">${allHit ? '✅ All Targets Hit' : someHit ? '⚠️ Partial' : '❌ Missed'}</span>
+            </div>
+            
+            <!-- Metrics -->
+            <div class="grid grid-cols-4 gap-3 text-center text-sm">
+              <div class="bg-white/70 p-2 rounded">
+                <p class="font-bold ${w.targetsHit?.accounts ? 'text-green-600' : 'text-red-600'}">${w.accounts}/${TARGETS.accounts}</p>
+                <p class="text-xs text-gray-600">Accounts</p>
+              </div>
+              <div class="bg-white/70 p-2 rounded">
+                <p class="font-bold ${w.targetsHit?.calls ? 'text-green-600' : 'text-red-600'}">${w.calls}/${TARGETS.calls}</p>
+                <p class="text-xs text-gray-600">Calls</p>
+              </div>
+              <div class="bg-white/70 p-2 rounded">
+                <p class="font-bold ${w.targetsHit?.meetings ? 'text-green-600' : 'text-red-600'}">${w.meetings}/${TARGETS.meetings}</p>
+                <p class="text-xs text-gray-600">Meetings</p>
+              </div>
+              <div class="bg-white/70 p-2 rounded">
+                <p class="font-bold text-blue-600">${tasksCount}</p>
+                <p class="text-xs text-gray-600">Tasks Done</p>
+              </div>
+            </div>
+            
+            <!-- Tasks Completed -->
+            ${tasksCount > 0 ? `
+            <div class="mt-4 pt-3 border-t border-white/50">
+              <p class="text-xs font-medium text-gray-600 mb-2">✅ Tasks Completed This Week:</p>
+              <div class="flex flex-wrap gap-2">
+                ${(w.tasksCompleted || []).map(t => `
+                <span class="text-xs bg-white/80 px-2 py-1 rounded text-gray-700">✓ ${t.text}</span>
+                `).join('')}
+              </div>
+            </div>
+            ` : ''}
+          </div>
+        </div>`;
+      }).join('')}
     </div>
     
     <!-- Summary Stats -->
     <div class="mt-6 pt-4 border-t">
-      <h3 class="font-medium mb-3">Performance Summary</h3>
-      <div class="grid grid-cols-3 gap-4 text-center">
+      <h3 class="font-medium mb-3">📊 Performance Summary</h3>
+      <div class="grid grid-cols-4 gap-4 text-center">
         <div class="bg-green-50 p-3 rounded-lg">
           <p class="text-2xl font-bold text-green-600">${data.history.filter(w => w.targetsHit?.accounts && w.targetsHit?.calls && w.targetsHit?.meetings).length}</p>
           <p class="text-xs text-gray-600">Perfect Weeks</p>
@@ -569,6 +698,10 @@ function render() {
         <div class="bg-red-50 p-3 rounded-lg">
           <p class="text-2xl font-bold text-red-600">${data.history.filter(w => !w.targetsHit?.accounts && !w.targetsHit?.calls && !w.targetsHit?.meetings).length}</p>
           <p class="text-xs text-gray-600">Missed Weeks</p>
+        </div>
+        <div class="bg-blue-50 p-3 rounded-lg">
+          <p class="text-2xl font-bold text-blue-600">${data.history.reduce((s, w) => s + (w.tasksCompleted || []).length, 0)}</p>
+          <p class="text-xs text-gray-600">Total Tasks Done</p>
         </div>
       </div>
       
@@ -591,7 +724,7 @@ function render() {
     <div class="text-center py-12 text-gray-500">
       <p class="text-4xl mb-3">📊</p>
       <p>No weeks closed yet.</p>
-      <p class="text-sm">Close your first week to see history here.</p>
+      <p class="text-sm">Close your first week to start building your proof!</p>
     </div>
     `}
   </div>
