@@ -221,15 +221,15 @@
 <div id="setup" class="hide">
   <div class="setup">
     <h2>Connect your dashboard</h2>
-    <p>Paste your JSONBin Bin ID and Master Key. They save to this browser and sync your data to the cloud. You only do this once.</p>
+    <p>Paste your JSONBin Bin ID and a scoped Access Key (Bin Read + Bin Update). They save to this browser and sync your data. You only do this once.</p>
     <div class="fld">
       <label>Bin ID</label>
       <input id="su-bin" placeholder="e.g. 665a1f...">
     </div>
     <div class="fld">
-      <label>Master Key</label>
-      <input id="su-key" placeholder="$2a$10$...">
-      <div class="hint">Find both at jsonbin.io after creating a bin.</div>
+      <label>Access Key</label>
+      <input id="su-key" placeholder="$2b$10$...">
+      <div class="hint">Create one in JSONBin under API Keys → Access Keys. Do not use your Master Key.</div>
     </div>
     <button class="btn" style="width:100%" onclick="saveSetup()">Connect and start</button>
   </div>
@@ -379,19 +379,19 @@
 
 <script>
 /* ============================================================
-   CONFIG — paste your NEW JSONBin credentials here (optional).
-   If you leave them blank, the app shows a setup screen and
-   saves what you paste there to this browser.
+   CONFIG — paste your NEW JSONBin credentials here.
+   Use a scoped ACCESS KEY (Bin Read + Bin Update, this bin only).
+   NEVER put your Master Key here — it controls your whole account.
    ============================================================ */
 const CONFIG = {
   BIN_ID: "",
-  MASTER_KEY: ""
+  ACCESS_KEY: ""
 };
 
 /* ---------- credential resolution ---------- */
 function creds(){
   const b = CONFIG.BIN_ID || localStorage.getItem("smdash_bin") || "";
-  const k = CONFIG.MASTER_KEY || localStorage.getItem("smdash_key") || "";
+  const k = CONFIG.ACCESS_KEY || localStorage.getItem("smdash_key") || "";
   return {bin:b.trim(), key:k.trim()};
 }
 function saveSetup(){
@@ -523,7 +523,7 @@ function ensureWeek(monISO){
 let saveTimer=null,saving=false;
 async function loadCloud(){
   const c=creds();
-  const res=await fetch(`https://api.jsonbin.io/v3/b/${c.bin}/latest`,{headers:{"X-Master-Key":c.key}});
+  const res=await fetch(`https://api.jsonbin.io/v3/b/${c.bin}/latest`,{headers:{"X-Access-Key":c.key}});
   if(!res.ok)throw new Error("load "+res.status);
   const j=await res.json();
   const rec=j.record;
@@ -542,7 +542,7 @@ async function saveCloud(){
   try{
     const res=await fetch(`https://api.jsonbin.io/v3/b/${c.bin}`,{
       method:"PUT",
-      headers:{"Content-Type":"application/json","X-Master-Key":c.key,"X-Bin-Versioning":"false"},
+      headers:{"Content-Type":"application/json","X-Access-Key":c.key,"X-Bin-Versioning":"false"},
       body:JSON.stringify(S)
     });
     if(!res.ok)throw new Error("save "+res.status);
