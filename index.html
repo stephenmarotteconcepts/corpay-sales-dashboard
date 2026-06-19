@@ -43,6 +43,8 @@
   .bar-labels .r{color:rgba(255,255,255,.92);text-shadow:0 1px 2px rgba(0,0,0,.15)}
   .quota-mark{position:absolute;top:-7px;bottom:-7px;width:2px;background:rgba(255,255,255,.95);border-radius:2px}
   .quota-mark::after{content:attr(data-label);position:absolute;top:-19px;left:50%;transform:translateX(-50%);font-size:10.5px;font-weight:700;color:#fff;white-space:nowrap;text-shadow:0 1px 3px rgba(0,0,0,.3)}
+  .pace-mark{position:absolute;top:-7px;bottom:-7px;width:0;border-left:2px dashed #ffd27a;z-index:2}
+  .pace-mark::after{content:attr(data-label);position:absolute;bottom:-21px;left:50%;transform:translateX(-50%);font-size:10.5px;font-weight:700;color:#ffe7b0;white-space:nowrap;text-shadow:0 1px 3px rgba(0,0,0,.35)}
 
   /* hero stats */
   .stats{margin-top:22px;display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
@@ -257,6 +259,7 @@
       <div class="bar">
         <div class="bar-fill" id="h-fill" style="width:2px"></div>
         <div class="quota-mark" id="h-qmark" data-label="$385K quota"></div>
+        <div class="pace-mark" id="h-pmark" data-label="pace"></div>
         <div class="bar-labels"><span id="h-closed">$0 closed</span><span class="r" id="h-stretch">$577.5K stretch</span></div>
       </div>
     </div>
@@ -273,7 +276,7 @@
   <div class="pace">
     <div class="pace-card"><div class="k">Working weeks left</div><div class="v" id="p-weeks">—</div><div class="note" id="p-weeks-n">to Nov 30</div></div>
     <div class="pace-card accent"><div class="k">Revenue pace needed</div><div class="v" id="p-pace">—</div><div class="note" id="p-pace-n">per working week to hit quota</div></div>
-    <div class="pace-card"><div class="k">Gap to quota</div><div class="v" id="p-gap">—</div><div class="note" id="p-gap-n"></div></div>
+    <div class="pace-card"><div class="k">Pace status</div><div class="v" id="p-status">—</div><div class="note" id="p-status-n"></div></div>
   </div>
 
   <!-- TABS -->
@@ -348,10 +351,11 @@
     <div class="modal-b">
       <div class="fld"><label>Your name</label><input id="set-name"></div>
       <div class="fld-row">
-        <div class="fld"><label>Quota (100%)</label><input id="set-quota" type="number"></div>
+        <div class="fld"><label>Target (bar 100%)</label><input id="set-quota" type="number"></div>
         <div class="fld"><label>Stretch %</label><input id="set-stretch" type="number"></div>
         <div class="fld"><label>Season ends</label><input id="set-end" type="date"></div>
       </div>
+      <div class="fld"><label>Annual quota (drives on-pace line)</label><input id="set-annual" type="number"><div class="hint">Spread across the calendar year. Half the year = half this number.</div></div>
       <div style="font-size:13px;font-weight:700;color:var(--muted);margin:6px 0 12px">Weekly activity goals</div>
       <div class="fld-row">
         <div class="fld"><label>Accounts/wk</label><input id="set-ga" type="number"></div>
@@ -417,6 +421,9 @@ function weekRangeLabel(monISO){const m=parseISO(monISO);const f=addDays(m,4);re
 function dayISO(monISO,dowIdx){return iso(addDays(parseISO(monISO),dowIdx));}
 function money(n){return "$"+Math.round(n).toLocaleString();}
 function moneyShort(n){if(n>=1000)return "$"+(n/1000).toFixed(n%1000===0?0:1)+"K";return "$"+n;}
+function dayOfYear(d){const s=new Date(d.getFullYear(),0,1);return Math.floor((d-s)/86400000)+1;}
+function daysInYear(y){return ((y%4===0&&y%100!==0)||y%400===0)?366:365;}
+function onPaceAmount(){const now=new Date();return S.config.annualQuota*(dayOfYear(now)/daysInYear(now.getFullYear()));}
 
 /* ---------- generate season weeks ---------- */
 function seasonWeeks(){
@@ -488,6 +495,7 @@ function blankState(){
       year:2026,
       quotaTarget:385000,
       stretchPct:150,
+      annualQuota:260000,
       seasonEnd:"2026-11-30",
       weeklyGoals:{accounts:50,calls:250,meetings:8},
       holidays:[
@@ -632,21 +640,27 @@ function renderGrid(){
     html+=`<tr class="${isPto?'is-pto':''} ${isHol?'is-hol':''}">
       <td class="day">${DOW_LABEL[d]}<span class="dt">${MONTHS[parseISO(dIso).getMonth()]} ${dnum}</span>${isHol?'<span class="hol">'+S.config.holidays.find(h=>h.date===dIso).name+'</span>':''}</td>
       <td class="cc"><span class="pto-cb ${isPto?'on':''}" onclick="togglePto('${dIso}')"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></span></td>
-      <td class="cc"><input class="ninput ${off?'off':''}" type="number" min="0" value="${v.accounts}" ${off?'disabled':''} onchange="setAct('${mon}','${d}','accounts',this.value)"></td>
-      <td class="cc"><input class="ninput ${off?'off':''}" type="number" min="0" value="${v.calls}" ${off?'disabled':''} onchange="setAct('${mon}','${d}','calls',this.value)"></td>
-      <td class="cc"><input class="ninput ${off?'off':''}" type="number" min="0" value="${v.meetings}" ${off?'disabled':''} onchange="setAct('${mon}','${d}','meetings',this.value)"></td>
+      <td class="cc"><input class="ninput ${off?'off':''}" type="number" min="0" value="${v.accounts}" ${off?'disabled':''} onfocus="this.select()" oninput="setAct('${mon}','${d}','accounts',this.value)"></td>
+      <td class="cc"><input class="ninput ${off?'off':''}" type="number" min="0" value="${v.calls}" ${off?'disabled':''} onfocus="this.select()" oninput="setAct('${mon}','${d}','calls',this.value)"></td>
+      <td class="cc"><input class="ninput ${off?'off':''}" type="number" min="0" value="${v.meetings}" ${off?'disabled':''} onfocus="this.select()" oninput="setAct('${mon}','${d}','meetings',this.value)"></td>
     </tr>`;
   });
   const ta=weekTarget(mon,"accounts"),tc=weekTarget(mon,"calls"),tm=weekTarget(mon,"meetings");
   const rd=redistributionFor(mon);
   const bump=rd.from>0;
   html+=`<tr><td class="day">Week total <span class="tgt ${bump?'bump':''}">target ${ta} / ${tc} / ${tm}${bump?' (boosted)':''}</span></td><td></td>
-    <td class="cc grid-tot">${tot.accounts}</td><td class="cc grid-tot">${tot.calls}</td><td class="cc grid-tot">${tot.meetings}</td></tr>`;
+    <td class="cc grid-tot" id="tot-accounts">${tot.accounts}</td><td class="cc grid-tot" id="tot-calls">${tot.calls}</td><td class="cc grid-tot" id="tot-meetings">${tot.meetings}</td></tr>`;
   body.innerHTML=html;
 }
 function setAct(mon,d,metric,val){
   ensureWeek(mon);
-  S.weeks[mon].days[d][metric]=Math.max(0,parseInt(val)||0);
+  const clean=val===""?0:Math.max(0,parseInt(val,10)||0);
+  S.weeks[mon].days[d][metric]=clean;
+  // live-update week total cells without re-rendering (keeps cursor in the field)
+  const t={accounts:0,calls:0,meetings:0};
+  DOW.forEach(dd=>{t.accounts+=S.weeks[mon].days[dd].accounts;t.calls+=S.weeks[mon].days[dd].calls;t.meetings+=S.weeks[mon].days[dd].meetings;});
+  const ta=document.getElementById("tot-accounts"),tc=document.getElementById("tot-calls"),tm=document.getElementById("tot-meetings");
+  if(ta)ta.textContent=t.accounts;if(tc)tc.textContent=t.calls;if(tm)tm.textContent=t.meetings;
   renderHero();queueSave();
 }
 function togglePto(dIso){
@@ -706,6 +720,11 @@ function renderHero(){
   document.getElementById("h-fill").style.width=Math.max(fillPct,0.4)+"%";
   document.getElementById("h-qmark").style.left=(quota/stretch*100)+"%";
   document.getElementById("h-qmark").setAttribute("data-label",moneyShort(quota)+" quota");
+  // on-pace marker (annual quota prorated across the year)
+  const pace=onPaceAmount();
+  const pmark=document.getElementById("h-pmark");
+  pmark.style.left=Math.min(pace/stretch*100,100)+"%";
+  pmark.setAttribute("data-label",moneyShort(pace)+" pace");
   document.getElementById("h-closed").textContent=money(closed)+" closed";
   document.getElementById("h-stretch").textContent=moneyShort(stretch)+" stretch";
   // stat totals
@@ -724,12 +743,16 @@ function renderHero(){
   document.getElementById("p-weeks").textContent=workWeeks;
   const ptoWeeksCount=wks.filter(isFullPTOWeek).length;
   document.getElementById("p-weeks-n").textContent="to Nov 30"+(ptoWeeksCount?` · ${ptoWeeksCount} PTO wk${ptoWeeksCount>1?'s':''} out`:"");
-  const pace=workWeeks>0?gap/workWeeks:0;
-  document.getElementById("p-pace").innerHTML=closed>=quota?'<span style="color:var(--green)">Quota hit ✓</span>':money(pace)+" <small>/wk</small>";
-  document.getElementById("p-pace-n").textContent=closed>=quota?"now chase the "+S.config.stretchPct+"% stretch":"per working week to hit quota";
-  document.getElementById("p-gap").textContent=money(gap);
-  const stretchGap=Math.max(0,stretch-closed);
-  document.getElementById("p-gap-n").textContent=money(stretchGap)+" to stretch";
+  const weekPace=workWeeks>0?gap/workWeeks:0;
+  document.getElementById("p-pace").innerHTML=closed>=quota?'<span style="color:var(--green)">Target hit ✓</span>':money(weekPace)+" <small>/wk</small>";
+  document.getElementById("p-pace-n").textContent=closed>=quota?"now chase the "+S.config.stretchPct+"% stretch":"per working week to hit "+moneyShort(quota)+" target";
+  // pace status vs annual quota
+  const onPace=onPaceAmount();
+  const diff=closed-onPace;
+  const statusEl=document.getElementById("p-status");
+  if(diff>=0){statusEl.innerHTML='+'+money(diff)+' <small style="color:var(--green)">ahead</small>';statusEl.style.color='var(--green)';}
+  else{statusEl.innerHTML=money(Math.abs(diff))+' <small style="color:var(--amber)">behind</small>';statusEl.style.color='var(--amber)';}
+  document.getElementById("p-status-n").textContent="On pace today: "+money(onPace)+" (vs "+moneyShort(S.config.annualQuota)+" quota)";
 }
 
 /* ---------- HISTORY ---------- */
@@ -840,6 +863,7 @@ function openSettings(){
   document.getElementById("set-name").value=S.config.name;
   document.getElementById("set-quota").value=S.config.quotaTarget;
   document.getElementById("set-stretch").value=S.config.stretchPct;
+  document.getElementById("set-annual").value=S.config.annualQuota;
   document.getElementById("set-end").value=S.config.seasonEnd;
   document.getElementById("set-ga").value=S.config.weeklyGoals.accounts;
   document.getElementById("set-gc").value=S.config.weeklyGoals.calls;
@@ -851,6 +875,7 @@ function saveSettings(){
   S.config.name=document.getElementById("set-name").value.trim()||S.config.name;
   S.config.quotaTarget=Math.max(1,parseFloat(document.getElementById("set-quota").value)||S.config.quotaTarget);
   S.config.stretchPct=Math.max(100,parseFloat(document.getElementById("set-stretch").value)||150);
+  S.config.annualQuota=Math.max(1,parseFloat(document.getElementById("set-annual").value)||S.config.annualQuota);
   S.config.seasonEnd=document.getElementById("set-end").value||S.config.seasonEnd;
   S.config.weeklyGoals.accounts=Math.max(0,parseInt(document.getElementById("set-ga").value)||0);
   S.config.weeklyGoals.calls=Math.max(0,parseInt(document.getElementById("set-gc").value)||0);
